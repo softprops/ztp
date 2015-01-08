@@ -9,12 +9,11 @@ import zoey._
 
 case class Server
  (zk: ZkClient, port: Int = 8080) {
-  def start() {
+  def run() {
     netty.Server.http(port)
-     .plan(Planify(Endpoints(zk).intent))
+     .plan(Planify(ZNodes(zk).intent))
      .beforeStop {
        Await.ready(zk.close(), 4.seconds)
-     }
-     .run()
+     }.run()
   }
 }
