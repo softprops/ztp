@@ -3,12 +3,13 @@ package ztp
 import base64.Encode
 import org.apache.zookeeper.data.Stat
 import unfiltered.Async.Intent
-import unfiltered.response.{ BadRequest, Created, HeaderName, NotAcceptable, Ok, NotFound, ResponseString }
-import unfiltered.request.{ Accept, Accepts, Body, DELETE, Path, GET, HEAD, HttpRequest, PUT }
+import unfiltered.response.{ BadRequest, Created, Gone, HeaderName, NotAcceptable, Ok, NotFound, ResponseString }
+import unfiltered.request.{ Accept, Accepts, Body, DELETE, Params, Path, GET, HEAD, HttpRequest, PUT, & }
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{ Failure, Success }
 import scala.util.control.NonFatal
-import zoey.{ ZNode, ZkClient }
+import zoey.{ NodeEvent, ZNode, ZkClient }
 import org.json4s.native.JsonMethods.{ compact, parseOpt, render }
 
 object XZNode {
@@ -17,6 +18,8 @@ object XZNode {
   object Ctime extends HeaderName("X-ZNode-Ctime")
   object ChildCount extends HeaderName("X-ZNode-Child-Count")
 }
+
+object Watch extends Params.Extract("watch", Params.first)
 
 case class ZNodes(zk: ZkClient) {
   private def stat(s: Stat) =
@@ -45,7 +48,7 @@ case class ZNodes(zk: ZkClient) {
         case "/" => p
         case _ => p.stripSuffix("/")
       })
-      val response = r match {
+      r match {
         case DELETE(_) =>
           (for {
             _ <- znode.delete()
@@ -54,15 +57,46 @@ case class ZNodes(zk: ZkClient) {
             case NonFatal(_) =>
               NotFound
           }
-        case req @ GET(_) =>
+          .onSuccess {
+            case f => r.respond(f)
+          }
+        case req @ GET(_) & Params(params) =>
           (for {
-            dnode <- znode.data()
-          } yield {
-            stat(dnode.stat) andThen data(req)(dnode.bytes)
+            dnode <- params match {
+              case Watch(_) => znode.data.watch()
+              case _        => znode.data()
+            }
+          } yield dnode match {
+            case dat: ZNode.Data =>
+              r.respond(stat(dat.stat) andThen data(req)(dat.bytes))
+            case ZNode.Watch(trydat, update) =>
+              update.onComplete {
+                case Success(ev) =>
+                  ev match {
+                    case NodeEvent.Created(_)         =>
+                      r.respond(ResponseString(ev.toString))
+                    case NodeEvent.ChildrenChanged(_) =>
+                      r.respond(ResponseString(ev.toString))
+                    case NodeEvent.DataChanged(_)     =>
+                      (for {
+                        updated <- znode.data()
+                      } yield stat(updated.stat) andThen data(req)(updated.bytes))
+                       .recover {
+                         case _ => BadRequest
+                       }
+                       .onSuccess {
+                         case f => r.respond(f)
+                       }
+                    case NodeEvent.Deleted(_)         =>
+                      r.respond(Gone)
+                  }
+                case Failure(fail) =>
+                  r.respond(BadRequest)
+              }
           })
           .recover {
             case NonFatal(_) =>
-              NotFound
+              r.respond(NotFound)
           }
         case HEAD(_) =>
           (for {
@@ -71,6 +105,9 @@ case class ZNodes(zk: ZkClient) {
           .recover {
             case NonFatal(_) =>
               NotFound
+          }
+          .onSuccess {
+            case f => r.respond(f)
           }
         case PUT(_) =>
           ZNode.mkdirp(
@@ -88,11 +125,11 @@ case class ZNodes(zk: ZkClient) {
               case NonFatal(_) =>
                 BadRequest
             }
+            .onSuccess {
+              case f => r.respond(f)
+            }
         case _ =>
-          Future.successful(NotFound)
-      }
-      response.onSuccess {
-        case s => r.respond(s)
+          r.respond(NotFound)
       }
   }
 }
