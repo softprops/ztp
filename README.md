@@ -38,5 +38,38 @@ Content-Length: 4
 doug
 ```
 
+Zookeeper also supports the notion of a "watch", a request to monitor a path for changes. `ztp` supports this for GET requests containing a `watch` query parameter.
+
+Client A's request will not be responded to unless path "hello" changes
+
+```bash
+$ curl -i "http://localhost:8080/hello?watch" -H "Accept: text/plain"
+```
+
+When Client B makes a change to that path by updating its value...
+
+```bash
+curl -i "http://localhost:8080/hello" -d "dave" -X PUT
+HTTP/1.1 200 OK
+X-ZNode-Version: 6
+X-ZNode-Mtime: 1422678022864
+X-ZNode-Ctime: 1420694899890
+X-ZNode-Child-Count: 1
+Connection: keep-alive
+Content-Length: 0
+```
+...Client A's connection will be responded to accordingly with the updated data
+
+```bash
+HTTP/1.1 200 OK
+X-ZNode-Version: 6
+X-ZNode-Mtime: 1422678022864
+X-ZNode-Ctime: 1420694899890
+X-ZNode-Child-Count: 1
+Connection: keep-alive
+Content-Length: 4
+
+dave
+```
 
 Doug Tangren (softprops) 2015
