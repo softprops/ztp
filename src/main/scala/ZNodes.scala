@@ -3,7 +3,7 @@ package ztp
 import base64.Encode
 import org.apache.zookeeper.data.Stat
 import unfiltered.Async.Intent
-import unfiltered.response.{ BadRequest, Created, Gone, HeaderName, NotAcceptable, Ok, NotFound, ResponseString }
+import unfiltered.response.{ BadRequest, Created, Gone, HeaderName, NotAcceptable, Ok, NotFound, ResponseFunction, ResponseString }
 import unfiltered.request.{ Accept, Accepts, Body, DELETE, Params, Path, GET, HEAD, HttpRequest, PUT, & }
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -12,22 +12,31 @@ import scala.util.control.NonFatal
 import zoey.{ NodeEvent, ZNode, ZkClient }
 import org.json4s.native.JsonMethods.{ compact, parseOpt, render }
 
+object Link extends HeaderName("Link")
+
 object XZNode {
   object Version extends HeaderName("X-ZNode-Version")
   object Mtime extends HeaderName("X-ZNode-Mtime")
   object Ctime extends HeaderName("X-ZNode-Ctime")
   object ChildCount extends HeaderName("X-ZNode-Child-Count")
+  def stat(s: Stat) =
+    Version(s.getVersion.toString) andThen
+    Mtime(s.getMtime.toString) andThen
+    Ctime(s.getCtime.toString) andThen
+    ChildCount(s.getNumChildren.toString)
 }
 
 object Watch extends Params.Extract("watch", Params.first)
 
 case class ZNodes(zk: ZkClient) {
-  private def stat(s: Stat) =
-    XZNode.Version(s.getVersion.toString) andThen
-    XZNode.Mtime(s.getMtime.toString) andThen
-    XZNode.Ctime(s.getCtime.toString) andThen
-    XZNode.ChildCount(s.getNumChildren.toString)
 
+  private def children(xs: Seq[ZNode]) = {
+    def link(node: ZNode): ResponseFunction[Any] =
+      Link(s"""<${node.path}>; rel="child"""")
+    (link(xs.head) /: xs.tail) {
+      _ andThen link(_)
+    }
+  }
   private def utf8Str(bytes: Array[Byte]) =
     new String(bytes, "utf8")
 
@@ -68,7 +77,15 @@ case class ZNodes(zk: ZkClient) {
             }
           } yield dnode match {
             case dat: ZNode.Data =>
-              r.respond(stat(dat.stat) andThen data(req)(dat.bytes))
+              def response =
+                XZNode.stat(dat.stat) andThen data(req)(dat.bytes)
+              if (dat.stat.getNumChildren > 0) dat.children().onComplete {
+                case Success(cnode) =>
+                  r.respond(children(cnode.nodes) andThen response)
+                case Failure(_) =>
+                  r.respond(BadRequest)
+              }
+              else r.respond(response)
             case ZNode.Watch(trydat, update) =>
               update.onComplete {
                 case Success(ev) =>
@@ -80,7 +97,7 @@ case class ZNodes(zk: ZkClient) {
                     case NodeEvent.DataChanged(_)     =>
                       (for {
                         updated <- znode.data()
-                      } yield stat(updated.stat) andThen data(req)(updated.bytes))
+                      } yield XZNode.stat(updated.stat) andThen data(req)(updated.bytes))
                        .recover {
                          case _ => BadRequest
                        }
