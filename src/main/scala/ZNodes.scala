@@ -2,15 +2,15 @@ package ztp
 
 import base64.Encode
 import org.apache.zookeeper.data.Stat
-import unfiltered.Async.Intent
-import unfiltered.response.{ BadRequest, Created, Gone, HeaderName, NotAcceptable, Ok, NotFound, ResponseFunction, ResponseString }
-import unfiltered.request.{ Accept, Accepts, Body, DELETE, Params, Path, GET, HEAD, HttpRequest, PUT, & }
+import org.json4s.native.JsonMethods.{ compact, parseOpt, render }
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{ Failure, Success }
 import scala.util.control.NonFatal
+import unfiltered.Async.Intent
+import unfiltered.response.{ BadRequest, Created, Gone, HeaderName, NotAcceptable, Ok, NotFound, ResponseFunction, ResponseString }
+import unfiltered.request.{ Accept, Accepts, Body, DELETE, Params, Path, GET, HEAD, HttpRequest, PUT, & }
 import zoey.{ NodeEvent, ZNode, ZkClient }
-import org.json4s.native.JsonMethods.{ compact, parseOpt, render }
 
 object Link extends HeaderName("Link")
 
