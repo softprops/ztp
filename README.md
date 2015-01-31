@@ -23,6 +23,20 @@ of metadata with it. These properties tend to map well with the semantics of HTT
 
 Ztp aims to map those properties directly. Data stored within a ZNode at a given path can be resolved over HTTP at an HTTP path. By default this data is returned in (urlsafe) base64 encoding. The accept header may be used to coerce this into a utf8 string or json. ZNode metadata is encoded in `X-ZNode-*` HTTP headers. ZNode children are represented as HTTP Link headers.
 
+An example request for a zookeeper znode storing the text "doug" under the path "/hello" may look something like the following
+
+```bash
+curl -i "http://localhost:8080/hello" -H "Accept: text/plain"
+HTTP/1.1 200 OK
+X-ZNode-Version: 5
+X-ZNode-Mtime: 1422676230782
+X-ZNode-Ctime: 1420694899890
+X-ZNode-Child-Count: 1
+Connection: keep-alive
+Content-Length: 4
+
+doug
+```
 
 
 Doug Tangren (softprops) 2015
