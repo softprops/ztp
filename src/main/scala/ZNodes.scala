@@ -30,6 +30,9 @@ object Watch extends Params.Extract("watch", Params.first)
 
 case class ZNodes(zk: ZkClient) {
 
+  private def utf8Str(bytes: Array[Byte]) =
+    new String(bytes, "utf8")
+
   private def children(xs: Seq[ZNode]) = {
     def link(node: ZNode): ResponseFunction[Any] =
       Link(s"""<${node.path}>; rel="child"""")
@@ -37,8 +40,6 @@ case class ZNodes(zk: ZkClient) {
       _ andThen link(_)
     }
   }
-  private def utf8Str(bytes: Array[Byte]) =
-    new String(bytes, "utf8")
 
   private def data(request: HttpRequest[_])(bytes: Array[Byte]) =
     if (bytes.length == 0) Ok else request match {
@@ -90,10 +91,6 @@ case class ZNodes(zk: ZkClient) {
               update.onComplete {
                 case Success(ev) =>
                   ev match {
-                    case NodeEvent.Created(_)         =>
-                      r.respond(ResponseString(ev.toString))
-                    case NodeEvent.ChildrenChanged(_) =>
-                      r.respond(ResponseString(ev.toString))
                     case NodeEvent.DataChanged(_)     =>
                       (for {
                         updated <- znode.data()
@@ -104,6 +101,10 @@ case class ZNodes(zk: ZkClient) {
                        .onSuccess {
                          case f => r.respond(f)
                        }
+                    case NodeEvent.Created(_)         =>
+                      r.respond(ResponseString(ev.toString))
+                    case NodeEvent.ChildrenChanged(_) =>
+                      r.respond(ResponseString(ev.toString))
                     case NodeEvent.Deleted(_)         =>
                       r.respond(Gone)
                   }
